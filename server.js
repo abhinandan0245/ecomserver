@@ -97,7 +97,7 @@ app.use('/api/customer', customerRoutes);
 app.use('/api', resetPRoutes);
 app.use('/api', productRoutes);
 app.use('/api/cart', cartRoutes);
-app.use('/api', wishlistRoutes);
+app.use('/api/wishlist', wishlistRoutes);
 app.use('/api/payment', paymentRoutes);
 
 

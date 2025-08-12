@@ -215,7 +215,7 @@ exports.createProduct = async (req, res) => {
   try {
     // Parse basic fields
     const {
-      productId, title, hsnCode, description, originalPrice, stock,
+      productId, title, hsnCode, description, ingredients, additionalInfo, originalPrice, stock,
       discountPercentage, discountAmount, categoryId, brand, productStatus
     } = req.body;
 
@@ -291,6 +291,8 @@ exports.createProduct = async (req, res) => {
       title,
       hsnCode,
       description,
+      ingredients,
+      additionalInfo,
       originalPrice: parseFloat(originalPrice || 0),
       price: finalPrice,
       stock: parseInt(stock || 0),
@@ -357,7 +359,7 @@ exports.updateProduct = async (req, res) => {
 
     // Parse basic fields
     const {
-      productId, title, hsnCode, description, originalPrice, stock,
+      productId, title, hsnCode, description, ingredients, additionalInfo, originalPrice, stock,
       discountPercentage, discountAmount, categoryId, brand, productStatus
     } = req.body;
 
@@ -432,6 +434,8 @@ exports.updateProduct = async (req, res) => {
       title: title || existing.title,
       hsnCode: hsnCode || existing.hsnCode,
       description: description || existing.description,
+      ingredients: ingredients || existing.ingredients,
+      additionalInfo: additionalInfo || existing.additionalInfo,
       originalPrice: finalOriginalPrice,
       price: finalPrice,
       stock: parseInt(stock || existing.stock),

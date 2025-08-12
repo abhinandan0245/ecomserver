@@ -24,10 +24,18 @@ Cart.init(
       type: DataTypes.INTEGER,
       allowNull: false,
     },
-    size: { type: DataTypes.STRING, allowNull: true }, // 🆕 added this line
+    size: { 
+      type: DataTypes.STRING, 
+      allowNull: true 
+    },
     quantity: {
       type: DataTypes.INTEGER,
       defaultValue: 1,
+    },
+    qtyPrice: { // 🆕 added field
+      type: DataTypes.FLOAT,
+      allowNull: false,
+      defaultValue: 0,
     },
   },
   {

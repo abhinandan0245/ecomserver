@@ -154,6 +154,8 @@ Product.init(
     title: DataTypes.STRING,
     hsnCode: DataTypes.STRING,
     description: DataTypes.TEXT,
+    ingredients: DataTypes.TEXT,
+    additionalInfo: DataTypes.TEXT,
     stock: {
       type: DataTypes.INTEGER,
       defaultValue: 0,

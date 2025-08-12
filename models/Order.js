@@ -40,14 +40,7 @@ Order.init({
   type: DataTypes.ENUM('Razorpay', 'Debit Card', 'Credit Card', 'UPI', 'Cash on Delivery'),
   allowNull: false,
 },
-razorpayOrderId: { 
-  type: DataTypes.STRING,
-  allowNull: true, // Only required for Razorpay payments
-},
-razorpayPaymentId: {
-  type: DataTypes.STRING,
-  allowNull: true, // Only required for successful Razorpay payments
-},
+
   amount: {
     type: DataTypes.FLOAT,
     allowNull: false,
