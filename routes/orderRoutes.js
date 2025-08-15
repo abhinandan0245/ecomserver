@@ -2,14 +2,19 @@ const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware');
 const roleMiddleware = require('../middleware/roleMiddleware');
-const {createOrder , getAllOrders , getOrderById ,  cancelOrder , exportOrders , getDropdownOptions , getDeliveredOrders , updateOrderStatus, createRazorpayOrder, getOrdersByStatus} = require('../controllers/orderController')
+const {createOrder , getAllOrders , getOrderById ,  cancelOrder , exportOrders , getDropdownOptions , getDeliveredOrders , updateOrderStatus, createRazorpayOrder, getOrdersByStatus, handleCCAvenueCallback, handlePaymentSuccess, confirmPayment} = require('../controllers/orderController')
 const { authAdmin  , authCustomer } = require('../middleware/authMiddleware');
 
 // Create Razorpay order (user)
-router.post('/create-razorpay-order', authCustomer, createRazorpayOrder);
 
 // Create order (user)
-router.post('/', authCustomer, createOrder);
+router.post('/', authCustomer ,  createOrder);
+// CC Avenue payment callback
+router.post('/ccavenue/callback', handleCCAvenueCallback);
+
+// Get order success details
+router.get('/success/:orderId', handlePaymentSuccess);
+// router.post('/confirm-payment', authCustomer, confirmPayment);
 
 //  Get all orders (admin)
 router.get('/', authAdmin, getAllOrders);

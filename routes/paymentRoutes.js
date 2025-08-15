@@ -10,15 +10,15 @@
 
 // module.exports = router;
 
-const express = require('express');
-const router = express.Router();
-const paymentccController = require('../controllers/paymentccController');
-const authCustomer = require('../middleware/authMiddleware').authCustomer;
+// const express = require('express');
+// const router = express.Router();
+// const paymentccController = require('../controllers/paymentccController');
+// const authCustomer = require('../middleware/authMiddleware').authCustomer;
 
-// Initiate CC Avenue payment
-router.post('/ccavenue/initiate', authCustomer, paymentccController.initiateCCAvenuePayment);
+// // Initiate CC Avenue payment
+// router.post('/ccavenue/initiate', authCustomer, paymentccController.initiateCCAvenuePayment);
 
-// CC Avenue callback handler
-router.post('/ccavenue/callback', paymentccController.handleCCAvenueCallback);
+// // CC Avenue callback handler
+// router.post('/ccavenue/callback', paymentccController.handleCCAvenueCallback);
 
-module.exports = router;
+// module.exports = router;

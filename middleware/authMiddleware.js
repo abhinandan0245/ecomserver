@@ -46,8 +46,14 @@ const extractToken = (req) => {
 
 // ✅ Auth Middleware for Customer
 exports.authCustomer = (req, res, next) => {
+
+  // console.log('Auth Middleware for Customer', req.headers);
   const token = extractToken(req);
-  if (!token) return res.status(401).json({ message: 'No token provided' });
+  // console.log('Customer token:', token);
+
+  
+
+  if (!token) return res.status(401).json({ message: 'No token provided from frontend' });
 
   try {
     const decoded = jwt.verify(token, SECRET_KEY);

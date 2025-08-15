@@ -39,6 +39,11 @@ OrderItem.init({
       key: 'id',
     },
   },
+  title: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    defaultValue: 'Product Title',
+  },
   quantity: {
     type: DataTypes.INTEGER,
     allowNull: false,

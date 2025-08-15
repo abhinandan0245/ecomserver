@@ -8,6 +8,7 @@ class Order extends Model {
       as: 'orderItems',
       onDelete: 'CASCADE',
     });
+      Order.belongsTo(models.Customer, { foreignKey: 'customerId' });
   }
 }
 
@@ -17,27 +18,19 @@ Order.init({
     autoIncrement: true,
     primaryKey: true,
   },
-  orderId: {
-    type: DataTypes.INTEGER,
-    allowNull: false,
-    unique: true,
-  },
+ orderId: {
+  type: DataTypes.STRING,
+  allowNull: false,
+  unique: true,
+},
+   customerId: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+    },
  
-  customerName: {
-    type: DataTypes.STRING,
-    allowNull: false,
-  },
-  customerEmail: {
-    type: DataTypes.STRING,
-    allowNull: false,
-  },
-
-  customerMobile: {
-    type: DataTypes.STRING,
-    allowNull: false,
-  },
+  
   paymentMethod: {
-  type: DataTypes.ENUM('Razorpay', 'Debit Card', 'Credit Card', 'UPI', 'Cash on Delivery'),
+  type: DataTypes.ENUM('Debit Card', 'Credit Card', 'UPI', 'Cash on Delivery'),
   allowNull: false,
 },
 
@@ -62,26 +55,42 @@ orderStatus: {
     type: DataTypes.DATE,
     allowNull: false,
   },
- 
- address: {
-  type: DataTypes.TEXT, // or LONGTEXT
-  allowNull: false,
-  get() {
-    const rawValue = this.getDataValue('address');
-    try {
-      return JSON.parse(rawValue);
-    } catch {
-      return rawValue;
-    }
+
+  
+  shippingName: {
+    type: DataTypes.STRING,
+    allowNull: false,
   },
-  set(value) {
-    if (typeof value === 'object') {
-      this.setDataValue('address', JSON.stringify(value));
-    } else {
-      this.setDataValue('address', value);
-    }
-  }
-},
+  shippingEmail: {
+    type: DataTypes.STRING,
+    allowNull: false,
+  },
+ 
+  shippingAddress: {
+    type: DataTypes.STRING,
+    allowNull: false,
+  },
+
+  shippingCity: {
+    type: DataTypes.STRING,
+    allowNull: false,
+  },
+  shippingState: {
+    type: DataTypes.STRING,
+    allowNull: false,
+  },
+  shippingPostalCode: {
+    type: DataTypes.STRING,
+    allowNull: false,
+  },
+  shippingCountry: {
+    type: DataTypes.STRING,
+    allowNull: false,
+  },
+  shippingPhone: {
+    type: DataTypes.STRING,
+    allowNull: false,
+  },
 
 
    subtotal: {

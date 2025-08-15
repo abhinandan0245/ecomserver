@@ -36,7 +36,7 @@ const refundPolicyRoutes = require('./routes/refundPolicyRoutes');
 const productRoutes = require('./routes/productRoutes');
 const cartRoutes = require('./routes/cartRoutes');
 const wishlistRoutes = require('./routes/wishlistRoutes');
-const paymentRoutes = require('./routes/paymentRoutes');
+const paymentRoutes = require('./routes/payment');
 // const User = require('./models/User');
 
 // Initialize express
@@ -44,10 +44,10 @@ const app = express();
 
 // ✅ Middleware
 app.use(cors({
-  origin: ['http://localhost:5173' , 'http://localhost:5174'],
+  origin: ['http://localhost:5173', process.env.FRONTEND_URL, 'http://localhost:5174'],
   // origin: ['https://admin.yoursite.com', 'https://www.yoursite.com']
-
   credentials: true,
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -92,7 +92,7 @@ app.use('/api', faqRoutes);
 app.use('/api', termConditionRoutes);
 app.use('/api', privacyPolicyRoutes);
 app.use('/api', refundPolicyRoutes);
-app.use('/api/orders', orderRoutes);
+app.use('/api/order', orderRoutes);
 app.use('/api/customer', customerRoutes);
 app.use('/api', resetPRoutes);
 app.use('/api', productRoutes);

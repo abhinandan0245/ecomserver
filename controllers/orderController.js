@@ -408,167 +408,732 @@
 
 
 
-// ✅ Updated Order Controller with Razorpay Order Placement Handling
+// // ✅ Updated Order Controller with Razorpay Order Placement Handling
+// const moment = require('moment');
+// const { Op, Sequelize } = require('sequelize');
+// const sequelize = require('../config/db'); // Make sure this path is correct
+// const Order = require('../models/Order');
+// const OrderItem = require('../models/OrderItem');
+// const Product = require('../models/Product');
+// const Invoice = require('../models/Invoice');
+// const Customer = require('../models/Customer');
+// const Cart = require('../models/Cart');
+// const Transaction = require('../models/Transaction');
+// const ccAvenue = require('../config/ccAvenue');
 
+// const generateOrderId = () => 'ORD' + Math.floor(100000 + Math.random() * 900000);
+// const generateInvoiceNumber = () => 'INV' + Date.now();
+
+// exports.createOrder = async (req, res) => {
+//   const t = await sequelize.transaction();
+//   try {
+//     const userId = req.userId;
+//     const user = await Customer.findByPk(userId, { transaction: t });
+//     if (!user) {
+//       await t.rollback();
+//       return res.status(404).json({ success: false, msg: 'User not found' });
+//     }
+
+//     const {
+//       products,
+//       paymentMethod,
+//       shippingName,
+//       shippingEmail,
+//       shippingAddress,
+//       shippingCity,
+//       shippingState,
+//       shippingPostalCode,
+//       shippingCountry,
+//       shippingPhone,
+//       subtotal,
+//       tax,
+//       shippingRate,
+//       discount,
+//       grandTotal
+//     } = req.body;
+
+//     // Validate products and stock
+//     for (const item of products) {
+//       const product = await Product.findByPk(item.productId, { transaction: t });
+//       if (!product) {
+//         await t.rollback();
+//         return res.status(400).json({ 
+//           success: false, 
+//           msg: `Product with ID ${item.productId} not found`,
+//           productId: item.productId
+//         });
+//       }
+//       if (product.stock < item.quantity) {
+//         await t.rollback();
+//         return res.status(400).json({ 
+//           success: false, 
+//           msg: `Only ${product.stock} items available for ${product.title}`,
+//           productId: item.productId,
+//           availableStock: product.stock
+//         });
+//       }
+//     }
+
+//     // Create order
+//     const order = await Order.create({
+//       orderId: generateOrderId(),
+//       customerId: userId,
+//       paymentMethod: paymentMethod === 'paypal' ? 'Credit Card' : 'Cash on Delivery',
+//       amount: grandTotal,
+//       paymentStatus: 'Pending',
+//       orderStatus: 'Pending',
+//       subtotal,
+//       tax,
+//       shippingRate,
+//       discount,
+//       grandTotal,
+//       shippingName,
+//       shippingEmail,
+//       shippingAddress,
+//       shippingCity,
+//       shippingState,
+//       shippingPostalCode,
+//       shippingCountry,
+//       shippingPhone,
+//       orderDate: new Date()
+//     }, { transaction: t });
+
+//     // Create order items and update stock
+//     await Promise.all(products.map(async (item) => {
+//       await OrderItem.create({
+//         orderId: order.id,
+//         productId: item.productId,
+//         title: item.title || 'Product',
+//         quantity: item.quantity,
+//         price: item.price,
+//         total: item.price * item.quantity,
+//       }, { transaction: t });
+
+//       await Product.decrement('stock', {
+//         by: item.quantity,
+//         where: { id: item.productId },
+//         transaction: t
+//       });
+//     }));
+
+//     // Handle Cash on Delivery
+//     if (paymentMethod === 'delivery') {
+//       // Create transaction record
+//       await Transaction.create({
+//         transactionId: 'TXN' + Math.floor(100000 + Math.random() * 900000),
+//         orderId: order.orderId,
+//         customerName: shippingName,
+//         paymentMethod: 'Cash on Delivery',
+//         amount: grandTotal,
+//         status: 'pending',
+//       }, { transaction: t });
+
+//       // Create invoice
+//       await Invoice.create({
+//         invoiceNumber: generateInvoiceNumber(),
+//         orderId: order.id,
+//         customerId: userId,
+//         issueDate: new Date(),
+//         dueDate: new Date(new Date().setDate(new Date().getDate() + 7)),
+//         status: 'pending',
+//         amount: grandTotal,
+//         tax,
+//         discount,
+//         shipping: shippingRate,
+//         total: grandTotal,
+//       }, { transaction: t });
+
+//       // Clear cart
+//       await Cart.destroy({ where: { customerId: userId }, transaction: t });
+
+//       await t.commit();
+
+//       return res.status(201).json({
+//         success: true,
+//         msg: 'COD order created successfully',
+//         order,
+//         paymentRequired: false
+//       });
+//     }
+
+//     // Handle CC Avenue Payment
+//     if (paymentMethod === 'paypal') {
+//       // Create transaction record
+//       const transactionRecord = await Transaction.create({
+//         transactionId: 'TXN' + Math.floor(100000 + Math.random() * 900000),
+//         orderId: order.orderId,
+//         customerName: shippingName,
+//         paymentMethod: 'Credit Card',
+//         amount: grandTotal,
+//         status: 'pending',
+//       }, { transaction: t });
+
+//       // Prepare CC Avenue request data
+//       const merchantData = {
+//         merchant_id: ccAvenue.merchantId,
+//         order_id: order.orderId,
+//         amount: grandTotal.toFixed(2),
+//         currency: 'INR',
+//         redirect_url: `${process.env.BASE_URL}/api/payment/ccavenue/callback`,
+//         cancel_url: `${process.env.BASE_URL}/api/payment/ccavenue/callback`,
+//         language: 'EN',
+//         billing_name: shippingName,
+//         billing_email: shippingEmail,
+//         billing_tel: shippingPhone,
+//         merchant_param1: transactionRecord.transactionId,
+//         billing_notes: JSON.stringify({
+//           customerId: userId,
+//           products: products.map(p => ({
+//             id: p.productId,
+//             name: p.title,
+//             quantity: p.quantity
+//           }))
+//         })
+//       };
+
+//       // Encrypt the merchant data
+//       const encryptedData = ccAvenue.encrypt(JSON.stringify(merchantData));
+
+//       await t.commit();
+
+//       return res.status(200).json({
+//         success: true,
+//         msg: 'Payment required',
+//         // In createOrder controller
+//         paymentUrl: `${process.env.CCAVENUE_PAYMENT_URL}/transaction/transaction.do?command=initiateTransaction&encRequest=${encodeURIComponent(encryptedData)}&access_code=${ccAvenue.accessCode}`,
+//         orderId: order.orderId,
+//         transactionId: transactionRecord.transactionId,
+//         paymentRequired: true
+//       });
+//     }
+
+//     await t.rollback();
+//     return res.status(400).json({ 
+//       success: false, 
+//       msg: 'Invalid payment method' 
+//     });
+
+//   } catch (err) {
+//     await t.rollback();
+//     console.error('Order creation error:', err);
+//     res.status(500).json({ 
+//       success: false,
+//       msg: 'Internal server error',
+//       error: process.env.NODE_ENV === 'development' ? err.message : undefined
+//     });
+//   }
+// };
+
+
+
+
+
+
+// controllers/orderController.js
 const moment = require('moment');
-const json2csv = require('json2csv').parse;
-const PDFDocument = require('pdfkit');  
-const fs = require('fs');
-const path = require('path');
-const { Op} = require('sequelize');
-const User = require('../models/User');
-const Invoice = require('../models/Invoice');
+const { Op, Sequelize } = require('sequelize');
+const sequelize = require('../config/db');
+
 const Order = require('../models/Order');
 const OrderItem = require('../models/OrderItem');
 const Product = require('../models/Product');
-const InvoiceSettings = require('../models/InvoiceSettings');
-const sendInvoiceEmail = require('../utils/emailSender');
+const Invoice = require('../models/Invoice');
 const Customer = require('../models/Customer');
-const razorpay = require('../config/rayzorpay');
+const Cart = require('../models/Cart');
 const Transaction = require('../models/Transaction');
-// const { Order, OrderItem, Product } = require('../models');
+const ccAvenue = require('../config/ccAvenue');
+const qs = require('querystring');
+const PDFDocument = require('pdfkit');
+const fs = require('fs');
+const path = require('path');
+const sendInvoiceEmail = require('../utils/emailSender');
 
-const generateOrderId = () => Math.floor(100000 + Math.random() * 900000);
-const generateInvoiceNumber = async () => `INV-${Date.now()}`;
-
-exports.createRazorpayOrder = async (req, res) => {
-  try {
-    const { amount } = req.body;
-    const options = {
-      amount: Math.round(amount * 100), // paise
-      currency: 'INR',
-      receipt: `receipt_order_${Date.now()}`,
-    };
-    const order = await razorpay.orders.create(options);
-    res.status(200).json({ success: true, order });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-};
+const generateOrderId = () => 'ORD' + Math.floor(100000 + Math.random() * 900000);
+const generateInvoiceNumber = () => 'INV' + Date.now();
 
 exports.createOrder = async (req, res) => {
+  const t = await sequelize.transaction();
   try {
     const userId = req.userId;
-    const user = await Customer.findByPk(userId);
-    if (!user) return res.status(404).json({ msg: 'User not found' });
+    const user = await Customer.findByPk(userId, { transaction: t });
+    if (!user) {
+      await t.rollback();
+      return res.status(404).json({ success: false, msg: 'User not found' });
+    }
 
-    let {
-      products,
-      address,
-      paymentMethod,
-      tax = 0,
-      shippingRate = 0,
-      discount = 0,
-      razorpayPaymentId,
-      razorpayOrderId
+    const {
+      products = [],
+      paymentMethod,             // EXPECT: 'cod' | 'ccavenue'
+      shippingName,
+      shippingEmail,
+      shippingAddress,
+      shippingCity,
+      shippingState,
+      shippingPostalCode,
+      shippingCountry,
+      shippingPhone,
+      subtotal,
+      tax,
+      shippingRate,
+      discount,
+      grandTotal
     } = req.body;
 
-    // Validate required fields
-    if (!products || !address || !paymentMethod) {
-      return res.status(400).json({ msg: 'Missing required fields' });
-    }
-
-    // Additional validation for Razorpay payments
-    if (paymentMethod === 'Razorpay') {
-      if (!razorpayPaymentId || !razorpayOrderId) {
-        return res.status(400).json({ 
-          msg: 'Razorpay payment ID and order ID are required' 
-        });
+    // Validate stock
+    for (const item of products) {
+      const product = await Product.findByPk(item.productId, { transaction: t });
+      if (!product) {
+        await t.rollback();
+        return res.status(400).json({ success: false, msg: `Product ${item.productId} not found` });
       }
-
-      // Verify payment with Razorpay
-      try {
-        const payment = await razorpay.payments.fetch(razorpayPaymentId);
-        
-        if (payment.order_id !== razorpayOrderId || payment.status !== 'captured') {
-          return res.status(400).json({ 
-            msg: 'Payment verification failed' 
-          });
-        }
-      } catch (err) {
-        console.error('Razorpay verification error:', err);
-        return res.status(400).json({ 
-          msg: 'Could not verify payment with Razorpay' 
-        });
+      if (product.stock < item.quantity) {
+        await t.rollback();
+        return res.status(400).json({ success: false, msg: `Only ${product.stock} left for ${product.title || product.name}` });
       }
     }
 
-    // Process address
-    if (typeof address !== 'string') {
-      address = JSON.stringify(address);
-    }
+    // --- COD flow: make order now ---
+    if (paymentMethod === 'cod') {
+      const order = await Order.create({
+        orderId: generateOrderId(),
+        customerId: userId,
+        paymentMethod: 'Cash on Delivery',
+        amount: grandTotal,
+        paymentStatus: 'Pending',
+        orderStatus: 'Pending',
+        subtotal,
+        tax,
+        shippingRate,
+        discount,
+        grandTotal,
+        shippingName,
+        shippingEmail,
+        shippingAddress,
+        shippingCity,
+        shippingState,
+        shippingPostalCode,
+        shippingCountry,
+        shippingPhone,
+        orderDate: new Date()
+      }, { transaction: t });
 
-    // Calculate order totals
-    const productsArray = typeof products === 'string' ? JSON.parse(products) : products;
-    const subtotal = productsArray.reduce(
-      (sum, item) => sum + item.price * (item.qty ?? item.quantity ?? 1),
-      0
-    );
-    const discountAmount = subtotal * (Number(discount) / 100);
-    const afterDiscount = subtotal - discountAmount;
-    const totalBeforeTax = afterDiscount + Number(shippingRate);
-    const taxAmount = totalBeforeTax * (Number(tax) / 100);
-    const grandTotal = totalBeforeTax + taxAmount;
+      // items + stock
+      await Promise.all(products.map(async (item) => {
+        await OrderItem.create({
+          orderId: order.id,
+          productId: item.productId,
+          title: item.title || 'Product',
+          quantity: item.quantity,
+          price: item.price,
+          total: item.price * item.quantity,
+        }, { transaction: t });
 
-    // Determine payment status
-    const finalPaymentStatus = paymentMethod === 'Cash on Delivery' 
-      ? 'Pending' 
-      : 'Success'; // Only Success if we got here for Razorpay
+        await Product.decrement('stock', {
+          by: item.quantity,
+          where: { id: item.productId },
+          transaction: t
+        });
+      }));
 
-    // Create the order
-    const order = await Order.create({
-      orderId: generateOrderId(),
-      razorpayOrderId: paymentMethod === 'Razorpay' ? razorpayOrderId : null,
-      razorpayPaymentId: paymentMethod === 'Razorpay' ? razorpayPaymentId : null,
-      customerName: user.name,
-      customerEmail: user.email,
-      customerMobile: user.mobile || '',
-      paymentMethod,
-      amount: subtotal,
-      paymentStatus: finalPaymentStatus,
-      orderStatus: 'Pending',
-      orderDate: new Date(),
-      address,
-      subtotal,
-      tax: taxAmount,
-      shippingRate,
-      discount: discountAmount,
-      grandTotal,
-    });
+      await Transaction.create({
+        transactionId: 'TXN' + Math.floor(100000 + Math.random() * 900000),
+        orderId: order.orderId,
+        customerId: userId,
+        customerName: shippingName,
+        paymentMethod: 'COD',
+        gateway: 'COD',
+        amount: grandTotal,
+        status: 'pending',
+      }, { transaction: t });
 
-    // Create order items
-    for (const item of productsArray) {
-      const quantity = item.qty ?? item.quantity ?? 1;
-      await OrderItem.create({
+      await Invoice.create({
+        invoiceNumber: generateInvoiceNumber(),
         orderId: order.id,
-        productId: item.productId,
-        quantity,
-        price: item.price,
-        total: quantity * item.price,
+        customerId: userId,
+        issueDate: new Date(),
+        dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        status: 'pending',
+        amount: grandTotal,
+        tax,
+        discount,
+        shipping: shippingRate,
+        total: grandTotal,
+      }, { transaction: t });
+
+      await Cart.destroy({ where: { customerId: userId }, transaction: t });
+
+      await t.commit();
+      return res.status(201).json({
+        success: true,
+        msg: 'COD order created successfully',
+        order,
+        paymentRequired: false
       });
     }
 
-if (finalPaymentStatus === 'Success') {
-  // ✅ Create Transaction
-  await Transaction.create({
-    orderId: order.orderId,
-    customerName: user.name,
-    paymentMethod,
-    amount: grandTotal,
-    status: 'success',
-    date: new Date(),
-  });
+    // --- CCAvenue flow: create only a Transaction now; order later on callback ---
+    if (paymentMethod === 'ccavenue') {
+      const orderId = generateOrderId();
 
-  // ✅ Generate Invoice
-  await exports.generateInvoiceOnOrderComplete(order.id);
-}
+      const transactionRecord = await Transaction.create({
+        transactionId: 'TXN' + Math.floor(100000 + Math.random() * 900000),
+        orderId,                     // provisional id to sync with gateway
+        customerId: userId,
+        customerName: shippingName,
+        paymentMethod: 'CCAVENUE',
+        gateway: 'CCAVENUE',
+        amount: grandTotal,
+        status: 'initiated',
+        meta: JSON.stringify({
+          customerId: userId,
+          products,
+          shipping: {
+            shippingName,
+            shippingEmail,
+            shippingAddress,
+            shippingCity,
+            shippingState,
+            shippingPostalCode,
+            shippingCountry,
+            shippingPhone,
+          },
+          totals: { subtotal, tax, shippingRate, discount, grandTotal }
+        })
+      }, { transaction: t });
 
-    res.status(201).json({ msg: 'Order created successfully', order });
+      // Build merchant data as x-www-form-urlencoded (what CCAvenue expects before encryption)
+      const merchantData = {
+        merchant_id: ccAvenue.merchantId,
+        order_id: orderId,
+        amount: Number(grandTotal).toFixed(2),
+        currency: 'INR',
+        redirect_url: process.env.CALLBACK_URL,
+        cancel_url: process.env.CALLBACK_URL,
+        language: 'EN',
+
+        billing_name: shippingName,
+        billing_email: shippingEmail,
+        billing_tel: shippingPhone,
+
+        // pass our transaction id for lookup on callback
+        merchant_param1: transactionRecord.transactionId,
+      };
+
+      const encRequest = ccAvenue.encrypt(qs.stringify(merchantData));
+      await t.commit();
+
+      // Return POST payload parts (not a GET link!)
+      return res.status(200).json({
+        success: true,
+        paymentRequired: true,
+        gateway: {
+          actionUrl: `${ccAvenue.baseUrl}/transaction/transaction.do?command=initiateTransaction`,
+          encRequest,
+          accessCode: process.env.CCAVENUE_ACCESS_CODE,
+        },
+        orderId,
+        transactionId: transactionRecord.transactionId,
+      });
+    }
+
+    await t.rollback();
+    return res.status(400).json({ success: false, msg: 'Invalid payment method' });
+
   } catch (err) {
-    console.error('Error creating order:', err);
-    res.status(500).json({ msg: 'Internal server error' });
+    await t.rollback();
+    console.error('Order creation error:', err);
+    res.status(500).json({ success: false, msg: 'Internal server error' });
   }
 };
+
+
+exports.handleCCAvenueCallback = async (req, res) => {
+  const t = await sequelize.transaction();
+  try {
+    const encryptedResponse = req.body.encResp;
+    if (!encryptedResponse) {
+      await t.rollback();
+      return res.status(400).json({ 
+        success: false,
+        msg: 'No payment response received' 
+      });
+    }
+
+    // Decrypt the response
+    const decryptedResponse = ccAvenue.decrypt(encryptedResponse);
+    const response = JSON.parse(decryptedResponse);
+    
+    console.log('CC Avenue Response:', response); // For debugging
+
+    // Validate required fields
+    if (!response.order_id || !response.order_status) {
+      await t.rollback();
+      return res.status(400).json({ 
+        success: false,
+        msg: 'Invalid payment response format' 
+      });
+    }
+
+    // Find the transaction record
+    const transactionRecord = await Transaction.findOne({
+      where: { transactionId: response.merchant_param1 },
+      transaction: t
+    });
+
+    if (!transactionRecord) {
+      await t.rollback();
+      return res.status(404).json({ 
+        success: false,
+        msg: 'Transaction not found' 
+      });
+    }
+
+    // Find the order
+    const order = await Order.findOne({
+      where: { orderId: response.order_id },
+      transaction: t
+    });
+
+    if (!order) {
+      await t.rollback();
+      return res.status(404).json({ 
+        success: false,
+        msg: 'Order not found' 
+      });
+    }
+
+    // Update transaction status
+    transactionRecord.status = response.order_status === 'Success' ? 'success' : 'failed';
+    transactionRecord.paymentId = response.bank_ref_no || null;
+    transactionRecord.responseData = response;
+    await transactionRecord.save({ transaction: t });
+
+    // Handle successful payment
+    if (response.order_status === 'Success') {
+      // Verify amount matches
+      if (parseFloat(response.amount) !== parseFloat(order.grandTotal)) {
+        await t.rollback();
+        return res.status(400).json({ 
+          success: false,
+          msg: 'Payment amount mismatch' 
+        });
+      }
+
+      // Update order status
+      await order.update({
+        paymentStatus: 'Paid',
+        orderStatus: 'Processing'
+      }, { transaction: t });
+
+      // Create invoice if not exists
+      const existingInvoice = await Invoice.findOne({
+        where: { orderId: order.id },
+        transaction: t
+      });
+
+      if (!existingInvoice) {
+        await Invoice.create({
+          invoiceNumber: generateInvoiceNumber(),
+          orderId: order.id,
+          customerId: order.customerId,
+          issueDate: new Date(),
+          dueDate: new Date(new Date().setDate(new Date().getDate() + 7)),
+          status: 'paid',
+          amount: order.grandTotal,
+          tax: order.tax,
+          discount: order.discount,
+          shipping: order.shippingRate,
+          total: order.grandTotal,
+        }, { transaction: t });
+      }
+
+      // Clear cart
+      await Cart.destroy({
+        where: { customerId: order.customerId },
+        transaction: t
+      });
+
+      await t.commit();
+
+      // Redirect to frontend success page
+      return res.redirect(`${process.env.FRONTEND_URL}/thankyou?order_id=${order.orderId}&status=success`);
+    }
+
+    // Handle failed payment
+    await order.update({
+      paymentStatus: 'Failed',
+      orderStatus: 'Failed',
+      paymentNote: response.failure_message || 'Payment failed'
+    }, { transaction: t });
+
+    await t.commit();
+    return res.redirect(`${process.env.FRONTEND_URL}/thankyou?order_id=${order.orderId}&status=failed`);
+
+  } catch (err) {
+    await t.rollback();
+    console.error('CC Avenue callback error:', err);
+    return res.redirect(`${process.env.FRONTEND_URL}/payment-error`);
+  }
+};
+
+exports.handlePaymentSuccess = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+
+    const order = await Order.findOne({
+      where: { orderId },
+      include: [
+        {
+          model: OrderItem,
+          as: 'orderItems',
+          include: [{ model: Product, as: 'product' }]
+        },
+        {
+          model: Customer,
+          as: 'customer'
+        },
+        {
+          model: Invoice,
+          as: 'invoice'
+        },
+        {
+          model: Transaction,
+          as: 'transactions',
+          where: { status: 'success' },
+          required: false
+        }
+      ],
+      order: [
+        [{ model: Transaction, as: 'transactions' }, 'createdAt', 'DESC']
+      ]
+    });
+
+    if (!order) {
+      return res.status(404).json({ 
+        success: false,
+        msg: 'Order not found' 
+      });
+    }
+
+    // Verify order belongs to requesting user (if needed)
+    // if (req.userId && order.customerId !== req.userId) {
+    //   return res.status(403).json({ 
+    //     success: false,
+    //     msg: 'Not authorized to view this order' 
+    //   });
+    // }
+
+    // Format response
+    const response = {
+      success: true,
+      order: {
+        id: order.id,
+        orderId: order.orderId,
+        customerId: order.customerId,
+        customerName: order.shippingName,
+        customerEmail: order.shippingEmail,
+        paymentMethod: order.paymentMethod,
+        paymentStatus: order.paymentStatus,
+        orderStatus: order.orderStatus,
+        orderDate: order.orderDate,
+        amount: order.amount,
+        subtotal: order.subtotal,
+        tax: order.tax,
+        shippingRate: order.shippingRate,
+        discount: order.discount,
+        grandTotal: order.grandTotal,
+        shippingAddress: {
+          name: order.shippingName,
+          address: order.shippingAddress,
+          city: order.shippingCity,
+          state: order.shippingState,
+          postalCode: order.shippingPostalCode,
+          country: order.shippingCountry,
+          phone: order.shippingPhone
+        },
+        items: order.orderItems.map(item => ({
+          id: item.id,
+          productId: item.productId,
+          title: item.title,
+          quantity: item.quantity,
+          price: item.price,
+          total: item.total,
+          product: item.product ? {
+            id: item.product.id,
+            title: item.product.title,
+            image: item.product.image
+          } : null
+        })),
+        invoice: order.invoice ? {
+          invoiceNumber: order.invoice.invoiceNumber,
+          issueDate: order.invoice.issueDate,
+          dueDate: order.invoice.dueDate,
+          status: order.invoice.status,
+          amount: order.invoice.amount,
+          tax: order.invoice.tax,
+          discount: order.invoice.discount,
+          shipping: order.invoice.shipping,
+          total: order.invoice.total
+        } : null,
+        transaction: order.transactions && order.transactions.length > 0 ? {
+          id: order.transactions[0].id,
+          transactionId: order.transactions[0].transactionId,
+          paymentId: order.transactions[0].paymentId,
+          date: order.transactions[0].date,
+          status: order.transactions[0].status
+        } : null
+      }
+    };
+
+    res.json(response);
+
+  } catch (err) {
+    console.error('Error fetching order:', err);
+    res.status(500).json({ 
+      success: false,
+      msg: 'Internal server error' 
+    });
+  }
+};
+
+// Add this to your orderController
+exports.confirmPayment = async (req, res) => {
+  const t = await sequelize.transaction();
+  try {
+    const { orderId, paymentDetails } = req.body;
+    
+    // Verify payment with CC Avenue
+    const paymentVerified = await verifyCCAvenuePayment(paymentDetails);
+    
+    if (!paymentVerified) {
+      await t.rollback();
+      return res.status(400).json({ success: false, msg: 'Payment verification failed' });
+    }
+
+    // Update order status
+    await Order.update({
+      paymentStatus: 'Paid',
+      orderStatus: 'Processing'
+    }, { where: { orderId }, transaction: t });
+
+    // Create transaction record
+    await Transaction.create({
+      // ... transaction details
+    }, { transaction: t });
+
+    await t.commit();
+    return res.json({ success: true, orderId });
+
+  } catch (err) {
+    await t.rollback();
+    console.error('Payment confirmation error:', err);
+    res.status(500).json({ success: false, msg: 'Payment processing failed' });
+  }
+};
+
+
+
+
 
 
 exports.generateInvoiceOnOrderComplete = async (orderId) => {
@@ -579,78 +1144,96 @@ exports.generateInvoiceOnOrderComplete = async (orderId) => {
       return;
     }
 
-    const settings = await InvoiceSettings.findOne() || {
-      selectedTemplate: 'template1',
-      taxName: 'GST',
-      taxRate: 0,
-    };
-
-    const invoiceNumber = await generateInvoiceNumber();
-
-    await Invoice.create({
-      orderId,
-      invoiceNumber,
-      template: settings.selectedTemplate,
-      generatedAt: new Date(),
-    });
-
-    const invoiceDir = path.join(__dirname, '../invoices');
-    if (!fs.existsSync(invoiceDir)) {
-      fs.mkdirSync(invoiceDir, { recursive: true });
-    }
-
-    const pdfPath = path.join(invoiceDir, `${invoiceNumber}.pdf`);
-    const doc = new PDFDocument();
-    doc.pipe(fs.createWriteStream(pdfPath));
-
-    doc.fontSize(20).text('INVOICE', { align: 'center' });
-    doc.moveDown();
-
-    doc.fontSize(14).text(`Invoice Number: ${invoiceNumber}`);
-    doc.text(`Date: ${new Date().toLocaleDateString()}`);
-    doc.text(`Customer: ${order.customerName}`);
-    doc.text(`Email: ${order.customerEmail}`);
-    doc.text(`Mobile: ${order.customerMobile}`);
-    doc.text(`Payment Method: ${order.paymentMethod}`);
-    doc.text(`Order ID: ${order.orderId}`);
-    doc.moveDown();
-    doc.text(`Tax: ${settings.taxName || 'N/A'} - ${settings.taxRate || 0}%`);
-    doc.moveDown();
-
     const items = await OrderItem.findAll({
       where: { orderId: order.id },
       include: [{ model: Product, as: 'product' }]
     });
 
-    doc.fontSize(16).text('Order Items:', { underline: true });
+    const invoiceNumber = 'INV' + Date.now();
+    const productDetails = items.map(item => ({
+      title: item.product?.title || 'Unnamed Product',
+      quantity: item.quantity,
+      price: item.price,
+      total: item.price * item.quantity
+    }));
 
-    let totalAmount = 0;
-    items.forEach((item, index) => {
-      const title = item.product?.title || 'Unnamed Product';
-      const quantity = item.quantity;
-      const price = item.price;
-      const lineTotal = quantity * price;
-      totalAmount += lineTotal;
-      doc.fontSize(12).text(
-        `${index + 1}. ${title} x ${quantity} - ₹${price} (Total: ₹${lineTotal})`
-      );
+    const subtotal = productDetails.reduce((sum, p) => sum + p.total, 0);
+    const tax = order.tax || 0;
+    const shipping = order.shippingRate || 0;
+    const discount = order.discount || 0;
+    const grandTotal = subtotal + tax + shipping - discount;
+
+    // Save invoice record
+    await Invoice.create({
+      orderId: order.id,
+      invoiceNumber,
+      customerName: order.shippingName,
+      customerEmail: order.shippingEmail,
+      customerPhone: order.shippingPhone,
+      billingAddress: order.shippingAddress,
+      items: productDetails,
+      subtotal,
+      tax,
+      shipping,
+      discount,
+      total: grandTotal
     });
 
+    // Generate PDF
+    const invoiceDir = path.join(__dirname, '../invoices');
+    if (!fs.existsSync(invoiceDir)) fs.mkdirSync(invoiceDir, { recursive: true });
+
+    const pdfPath = path.join(invoiceDir, `${invoiceNumber}.pdf`);
+    const doc = new PDFDocument({ margin: 50 });
+    doc.pipe(fs.createWriteStream(pdfPath));
+
+    // Header
+    doc.fontSize(20).text('INVOICE', { align: 'center' }).moveDown();
+    doc.fontSize(12).text(`Invoice Number: ${invoiceNumber}`);
+    doc.text(`Date: ${new Date().toLocaleDateString()}`);
     doc.moveDown();
-    doc.fontSize(14).text(`Total Amount: ₹${totalAmount}`, { align: 'right' });
+
+    // Customer Info
+    doc.text(`Customer: ${order.shippingName}`);
+    doc.text(`Email: ${order.shippingEmail}`);
+    doc.text(`Phone: ${order.shippingPhone}`);
+    doc.text(`Billing Address: ${order.shippingAddress}`);
+    doc.moveDown();
+
+    // Table Header
+    doc.fontSize(12).text('Item', 50, doc.y, { width: 200 });
+    doc.text('Qty', 300, doc.y, { width: 50 });
+    doc.text('Price', 350, doc.y, { width: 100 });
+    doc.text('Total', 450, doc.y, { width: 100 });
+    doc.moveDown();
+
+    // Table Rows
+    productDetails.forEach(p => {
+      doc.text(p.title, 50, doc.y, { width: 200 });
+      doc.text(p.quantity.toString(), 300, doc.y, { width: 50 });
+      doc.text(`₹${p.price}`, 350, doc.y, { width: 100 });
+      doc.text(`₹${p.total}`, 450, doc.y, { width: 100 });
+      doc.moveDown();
+    });
+
+    // Totals
+    doc.moveDown();
+    doc.text(`Subtotal: ₹${subtotal}`, { align: 'right' });
+    doc.text(`Tax: ₹${tax}`, { align: 'right' });
+    doc.text(`Shipping: ₹${shipping}`, { align: 'right' });
+    doc.text(`Discount: ₹${discount}`, { align: 'right' });
+    doc.fontSize(14).text(`Grand Total: ₹${grandTotal}`, { align: 'right', underline: true });
+
     doc.end();
 
-    await new Promise((resolve, reject) => {
-      doc.on('end', resolve);
-      doc.on('error', reject);
-    });
-
-    await sendInvoiceEmail(order.customerEmail, pdfPath, invoiceNumber);
+    await sendInvoiceEmail(order.shippingEmail, pdfPath, invoiceNumber);
     console.log(`✅ Invoice generated and emailed: ${pdfPath}`);
+
   } catch (error) {
     console.error('❌ Failed to generate/send invoice:', error.message);
   }
 };
+
 
 exports.getAllOrders = async (req, res) => {
   try {
