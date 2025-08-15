@@ -421,7 +421,7 @@ exports.updateProduct = async (req, res) => {
         console.error('Error parsing price variant:', variant, err);
       }
     }
-
+   
     // Parse tags
     const tags = parseFormArray(req.body.tags || existing.tags);
 
