@@ -29,8 +29,8 @@ Order.init({
     },
  
   
-  paymentMethod: {
-  type: DataTypes.ENUM('Debit Card', 'Credit Card', 'UPI', 'Cash on Delivery'),
+ paymentMethod: {
+  type: DataTypes.STRING,
   allowNull: false,
 },
 
@@ -41,13 +41,13 @@ Order.init({
       min: 0,
     },
   },
-  paymentStatus: {
-  type: DataTypes.ENUM('Pending', 'Success', 'Failed'),
+ paymentStatus: {
+  type: DataTypes.STRING,
   allowNull: false,
-  defaultValue: 'Pending',  
+  defaultValue: 'Pending',
 },
 orderStatus: {
-  type: DataTypes.ENUM('Pending', 'Processing', 'Shipped', 'Delivered', 'Cancelled', 'Failed'),
+  type: DataTypes.STRING,
   allowNull: false,
   defaultValue: 'Pending',
 },

@@ -646,7 +646,8 @@ const qs = require('querystring');
 const PDFDocument = require('pdfkit');
 const fs = require('fs');
 const path = require('path');
-const sendInvoiceEmail = require('../utils/emailSender');
+const sendInvoiceEmail = require('../utils/sendInvoiceEmail');
+const generateInvoicePDF = require('../utils/generateInvoicePDF');
 
 const generateOrderId = () => 'ORD' + Math.floor(100000 + Math.random() * 900000);
 const generateInvoiceNumber = () => 'INV' + Date.now();
@@ -697,7 +698,7 @@ exports.createOrder = async (req, res) => {
       const order = await Order.create({
         orderId: generateOrderId(),
         customerId: userId,
-        paymentMethod: 'Cash on Delivery',
+        paymentMethod: 'COD',
         amount: grandTotal,
         paymentStatus: 'Pending',
         orderStatus: 'Pending',
@@ -747,22 +748,58 @@ exports.createOrder = async (req, res) => {
       }, { transaction: t });
 
       await Invoice.create({
-        invoiceNumber: generateInvoiceNumber(),
-        orderId: order.id,
-        customerId: userId,
-        issueDate: new Date(),
-        dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-        status: 'pending',
-        amount: grandTotal,
-        tax,
-        discount,
-        shipping: shippingRate,
-        total: grandTotal,
-      }, { transaction: t });
+  orderId: order.id,
+  orderNumber: order.orderId, // Business order ID like "ORDxxxxxx"
+  invoiceNumber: generateInvoiceNumber(),
+  customerName: shippingName,
+  customerEmail: shippingEmail,
+  customerPhone: shippingPhone || null,
+  billingAddress: `${shippingAddress}, ${shippingCity}, ${shippingState}, ${shippingPostalCode}, ${shippingCountry}`,
+  items: products.map(item => ({
+    title: item.title || 'Product',
+    quantity: item.quantity,
+    price: item.price,
+    total: item.price * item.quantity
+  })),
+  subtotal,
+  tax,
+  shipping: shippingRate,
+  discount,
+  total: grandTotal,
+  generatedAt: new Date()
+}, { transaction: t });
 
       await Cart.destroy({ where: { customerId: userId }, transaction: t });
 
       await t.commit();
+
+      // ✅ Fetch invoice + items for email
+const invoice = await Invoice.findOne({ where: { orderId: order.id } });
+const orderItems = await OrderItem.findAll({ where: { orderId: order.id } });
+
+const invoiceData = {
+  orderNumber: order.orderId,
+  invoiceNumber: invoice.invoiceNumber,
+  customerName: shippingName,
+  customerEmail: shippingEmail,
+  generatedAt: invoice.generatedAt,
+  items: orderItems.map(i => ({
+    title: i.title,
+    quantity: i.quantity,
+    price: i.price,
+    total: i.price * i.quantity
+  })),
+  subtotal,
+  tax,
+  shipping: shippingRate,
+  discount,
+  total: grandTotal
+};
+
+const pdfPath = await generateInvoicePDF(invoiceData);
+await sendInvoiceEmail(shippingEmail, pdfPath, invoice.invoiceNumber);
+
+
       return res.status(201).json({
         success: true,
         msg: 'COD order created successfully',
@@ -954,6 +991,32 @@ exports.handleCCAvenueCallback = async (req, res) => {
       });
 
       await t.commit();
+
+      // ✅ Fetch invoice + items for email
+const invoice = await Invoice.findOne({ where: { orderId: order.id } });
+const orderItems = await OrderItem.findAll({ where: { orderId: order.id } });
+
+const invoiceData = {
+  orderNumber: order.orderId,
+  invoiceNumber: invoice.invoiceNumber,
+  customerName: order.shippingName,
+  customerEmail: order.shippingEmail,
+  generatedAt: invoice.generatedAt,
+  items: orderItems.map(i => ({
+    title: i.title,
+    quantity: i.quantity,
+    price: i.price,
+    total: i.price * i.quantity
+  })),
+  subtotal: order.subtotal,
+  tax: order.tax,
+  shipping: order.shippingRate,
+  discount: order.discount,
+  total: order.grandTotal
+};
+
+const pdfPath = await generateInvoicePDF(invoiceData);
+await sendInvoiceEmail(order.shippingEmail, pdfPath, invoice.invoiceNumber);
 
       // Redirect to frontend success page
       return res.redirect(`${process.env.FRONTEND_URL}/thankyou?order_id=${order.orderId}&status=success`);

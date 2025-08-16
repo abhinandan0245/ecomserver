@@ -62,7 +62,7 @@ const crypto = require('crypto');
 const merchantId = process.env.CCAVENUE_MERCHANT_ID;
 const accessCode = process.env.CCAVENUE_ACCESS_CODE;
 const workingKey = process.env.CCAVENUE_WORKING_KEY;
-const baseUrl = process.env.CCAVENUE_PAYMENT_URL || 'https://test.ccavenue.com';
+const baseUrl = process.env.CCAVENUE_PAYMENT_URL || 'http://localhost:5174';
 
 // CCAvenue uses AES-128-CBC with key = md5(workingKey), iv = 16 zero bytes.
 function getKeyIV() {

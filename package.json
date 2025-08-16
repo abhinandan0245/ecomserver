@@ -25,6 +25,7 @@
     "nodemailer": "^7.0.4",
     "nodemon": "^3.1.10",
     "pdfkit": "^0.17.1",
+    "puppeteer": "^24.16.2",
     "react-quill": "^2.0.0",
     "sequelize": "^6.37.7",
     "sequelize-cli": "^6.6.3",
