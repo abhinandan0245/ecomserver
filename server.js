@@ -29,14 +29,17 @@ const banner3Routes = require('./routes/banner3Routes');
 const whyShopRoutes = require('./routes/whyShopRoutes');
 const aboutusRoutes = require('./routes/aboutusRoutes');
 const contactRoutes = require('./routes/contactRoutes');
+const contactMessageRoutes = require('./routes/contactMessageRoutes');
 const faqRoutes = require('./routes/faqRoutes');
 const termConditionRoutes = require('./routes/termConditionsRpoutes');
 const privacyPolicyRoutes = require('./routes/privacyPolicyRoutes');
+const shippingInfoRoutes = require('./routes/shippingInfoRoutes');
 const refundPolicyRoutes = require('./routes/refundPolicyRoutes');
 const productRoutes = require('./routes/productRoutes');
 const cartRoutes = require('./routes/cartRoutes');
 const wishlistRoutes = require('./routes/wishlistRoutes');
 const paymentRoutes = require('./routes/payment');
+const shipmentRoutes = require('./routes/shipmentRoutes');
 // const User = require('./models/User');
 
 // Initialize express
@@ -87,10 +90,12 @@ app.use('/api', banner2Routes);
 app.use('/api', banner3Routes);
 app.use('/api/why-shop', whyShopRoutes);
 app.use('/api', aboutusRoutes);
-app.use('/api', contactRoutes);
+app.use('/api/', contactRoutes);
+app.use('/api/contact-message', contactMessageRoutes);
 app.use('/api', faqRoutes);
 app.use('/api', termConditionRoutes);
 app.use('/api', privacyPolicyRoutes);
+app.use('/api', shippingInfoRoutes);
 app.use('/api', refundPolicyRoutes);
 app.use('/api/order', orderRoutes);
 app.use('/api/customer', customerRoutes);
@@ -99,6 +104,7 @@ app.use('/api', productRoutes);
 app.use('/api/cart', cartRoutes);
 app.use('/api/wishlist', wishlistRoutes);
 app.use('/api/payment', paymentRoutes);
+app.use('/api/shipment', shipmentRoutes);
 
 
 // 404 Fallback

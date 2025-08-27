@@ -44,7 +44,7 @@ const extractToken = (req) => {
   return authHeader.split(' ')[1];
 };
 
-// ✅ Auth Middleware for Customer
+//  Auth Middleware for Customer
 exports.authCustomer = (req, res, next) => {
 
   // console.log('Auth Middleware for Customer', req.headers);
@@ -70,7 +70,7 @@ exports.authCustomer = (req, res, next) => {
   }
 };
 
-// ✅ Auth Middleware for Admin
+//  Auth Middleware for Admin
 exports.authAdmin = (req, res, next) => {
   const token = extractToken(req);
   if (!token) return res.status(401).json({ message: 'No token provided' });

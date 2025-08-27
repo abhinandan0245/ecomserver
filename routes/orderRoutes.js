@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware');
 const roleMiddleware = require('../middleware/roleMiddleware');
-const {createOrder , getAllOrders , getOrderById ,  cancelOrder , exportOrders , getDropdownOptions , getDeliveredOrders , updateOrderStatus, createRazorpayOrder, getOrdersByStatus, handleCCAvenueCallback, handlePaymentSuccess, confirmPayment} = require('../controllers/orderController')
+const {createOrder , getAllOrders , getOrderById ,  cancelOrder , exportOrders , getDropdownOptions , getDeliveredOrders , updateOrderStatus, createRazorpayOrder, getOrdersByStatus, handleCCAvenueCallback, handlePaymentSuccess, confirmPayment, getOrderWithShipments, getMyOrders, getMyOrderById} = require('../controllers/orderController')
 const { authAdmin  , authCustomer } = require('../middleware/authMiddleware');
 
 // Create Razorpay order (user)
@@ -18,6 +18,9 @@ router.get('/success/:orderId', handlePaymentSuccess);
 
 //  Get all orders (admin)
 router.get('/', authAdmin, getAllOrders);
+
+router.get('/my', authCustomer, getMyOrders);
+router.get('/my/:id', authCustomer, getMyOrderById);
 
 //  Get single order by ID (admin)
 router.get('/:id', authAdmin, getOrderById);
@@ -36,5 +39,7 @@ router.get('/delivered/list', authAdmin, getOrdersByStatus);
 
 //  Update order status (admin)
 router.put('/:id/status', authAdmin, updateOrderStatus);
+
+router.get("/:id/shipments",getOrderWithShipments);
 
 module.exports = router;

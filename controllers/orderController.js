@@ -633,7 +633,6 @@
 const moment = require('moment');
 const { Op, Sequelize } = require('sequelize');
 const sequelize = require('../config/db');
-
 const Order = require('../models/Order');
 const OrderItem = require('../models/OrderItem');
 const Product = require('../models/Product');
@@ -643,11 +642,11 @@ const Cart = require('../models/Cart');
 const Transaction = require('../models/Transaction');
 const ccAvenue = require('../config/ccAvenue');
 const qs = require('querystring');
-const PDFDocument = require('pdfkit');
-const fs = require('fs');
-const path = require('path');
 const sendInvoiceEmail = require('../utils/sendInvoiceEmail');
 const generateInvoicePDF = require('../utils/generateInvoicePDF');
+const Shipment = require('../models/shipment');
+const { sendGeneralOrderEmail } = require('../utils/sendGeneralOrderEmail');
+const ImageVariant = require('../models/imageVariant');
 
 const generateOrderId = () => 'ORD' + Math.floor(100000 + Math.random() * 900000);
 const generateInvoiceNumber = () => 'INV' + Date.now();
@@ -664,7 +663,7 @@ exports.createOrder = async (req, res) => {
 
     const {
       products = [],
-      paymentMethod,             // EXPECT: 'cod' | 'ccavenue'
+      paymentMethod, // 'cod' | 'ccavenue'
       shippingName,
       shippingEmail,
       shippingAddress,
@@ -677,168 +676,255 @@ exports.createOrder = async (req, res) => {
       tax,
       shippingRate,
       discount,
-      grandTotal
+      grandTotal,
     } = req.body;
 
-    // Validate stock
-    for (const item of products) {
-      const product = await Product.findByPk(item.productId, { transaction: t });
-      if (!product) {
-        await t.rollback();
-        return res.status(400).json({ success: false, msg: `Product ${item.productId} not found` });
-      }
-      if (product.stock < item.quantity) {
-        await t.rollback();
-        return res.status(400).json({ success: false, msg: `Only ${product.stock} left for ${product.title || product.name}` });
+    // 🔎 Validate stock (only for COD flow; for CCAVENUE we will validate later on payment success)
+    if (paymentMethod === 'cod') {
+      for (const item of products) {
+        const product = await Product.findByPk(item.productId, { transaction: t });
+        if (!product) {
+          await t.rollback();
+          return res.status(400).json({ success: false, msg: `Product ${item.productId} not found` });
+        }
+        if (product.stock < item.quantity) {
+          await t.rollback();
+          return res.status(400).json({
+            success: false,
+            msg: `Only ${product.stock} left for ${product.title || product.name}`,
+          });
+        }
       }
     }
 
-    // --- COD flow: make order now ---
+    // ============ COD FLOW ============
     if (paymentMethod === 'cod') {
-      const order = await Order.create({
-        orderId: generateOrderId(),
-        customerId: userId,
-        paymentMethod: 'COD',
-        amount: grandTotal,
-        paymentStatus: 'Pending',
-        orderStatus: 'Pending',
-        subtotal,
-        tax,
-        shippingRate,
-        discount,
-        grandTotal,
-        shippingName,
-        shippingEmail,
-        shippingAddress,
-        shippingCity,
-        shippingState,
-        shippingPostalCode,
-        shippingCountry,
-        shippingPhone,
-        orderDate: new Date()
-      }, { transaction: t });
+      const order = await Order.create(
+        {
+          orderId: generateOrderId(),
+          customerId: userId,
+          paymentMethod: 'COD',
+          amount: grandTotal,
+          paymentStatus: 'Pending',
+          orderStatus: 'Processing',
+          subtotal,
+          tax,
+          shippingRate,
+          discount,
+          grandTotal,
+          shippingName,
+          shippingEmail,
+          shippingAddress,
+          shippingCity,
+          shippingState,
+          shippingPostalCode,
+          shippingCountry,
+          shippingPhone,
+          orderDate: new Date(),
+        },
+        { transaction: t }
+      );
 
-      // items + stock
-      await Promise.all(products.map(async (item) => {
-        await OrderItem.create({
-          orderId: order.id,
-          productId: item.productId,
-          title: item.title || 'Product',
-          quantity: item.quantity,
-          price: item.price,
-          total: item.price * item.quantity,
-        }, { transaction: t });
+      // Order Items + stock update
+      const orderItems = [];
+      for (const item of products) {
+        const product = await Product.findByPk(item.productId, {
+          include: [{ model: ImageVariant, as: 'imageVariants' }],
+          transaction: t,
+        });
 
+        let productPriceVariants = product.priceVariants;
+        if (typeof productPriceVariants === "string") {
+          try { productPriceVariants = JSON.parse(productPriceVariants); } catch { productPriceVariants = []; }
+        }
+
+        const selectedVariant =
+          Array.isArray(productPriceVariants) && productPriceVariants.length
+            ? productPriceVariants.find(v => v.size === item.size) || productPriceVariants[0]
+            : null;
+
+        const price = Number(selectedVariant?.price ?? product.price ?? 0);
+        const originalPrice = Number(selectedVariant?.originalPrice ?? price);
+        const discountAmount = Number(selectedVariant?.discountAmount ?? 0);
+        const discountPercentage = Number(selectedVariant?.discountPercentage ?? 0);
+        const selectedSize = selectedVariant?.size ?? item.size ?? null;
+
+        const variantImagesFromDB =
+          (product.imageVariants || []).map(iv =>
+            iv.url ?? iv.imageUrl ?? iv.path ?? null
+          ).filter(Boolean);
+
+        let imageUrlsArr =
+          item.imageUrls?.length ? item.imageUrls
+          : item.image ? [item.image]
+          : variantImagesFromDB;
+
+        const imageUrls =
+          OrderItem.getAttributes().imageUrls.type?.key === 'JSON'
+            ? imageUrlsArr
+            : JSON.stringify(imageUrlsArr || []);
+
+        const total = price * Number(item.quantity || 0);
+
+        const orderItem = await OrderItem.create(
+          {
+            orderId: order.id,
+            productId: product.id,
+            title: product.title,
+            imageUrls,
+            quantity: item.quantity,
+            price,
+            originalPrice,
+            productDiscount: discountAmount,
+            discountPercentage,
+            selectedSize,
+            total,
+          },
+          { transaction: t }
+        );
+
+        orderItems.push(orderItem);
+
+        // stock decrement
         await Product.decrement('stock', {
           by: item.quantity,
           where: { id: item.productId },
-          transaction: t
+          transaction: t,
         });
-      }));
+      }
 
-      await Transaction.create({
-        transactionId: 'TXN' + Math.floor(100000 + Math.random() * 900000),
-        orderId: order.orderId,
-        customerId: userId,
-        customerName: shippingName,
-        paymentMethod: 'COD',
-        gateway: 'COD',
-        amount: grandTotal,
-        status: 'pending',
-      }, { transaction: t });
+      await Transaction.create(
+        {
+          transactionId: 'TXN' + Math.floor(100000 + Math.random() * 900000),
+          orderId: order.orderId,
+          customerId: userId,
+          customerName: shippingName,
+          paymentMethod: 'COD',
+          gateway: 'COD',
+          amount: grandTotal,
+          status: 'pending',
+        },
+        { transaction: t }
+      );
 
-      await Invoice.create({
-  orderId: order.id,
-  orderNumber: order.orderId, // Business order ID like "ORDxxxxxx"
-  invoiceNumber: generateInvoiceNumber(),
-  customerName: shippingName,
-  customerEmail: shippingEmail,
-  customerPhone: shippingPhone || null,
-  billingAddress: `${shippingAddress}, ${shippingCity}, ${shippingState}, ${shippingPostalCode}, ${shippingCountry}`,
-  items: products.map(item => ({
-    title: item.title || 'Product',
-    quantity: item.quantity,
-    price: item.price,
-    total: item.price * item.quantity
-  })),
-  subtotal,
-  tax,
-  shipping: shippingRate,
-  discount,
-  total: grandTotal,
-  generatedAt: new Date()
-}, { transaction: t });
+      const invoice = await Invoice.create(
+        {
+          orderId: order.id,
+          orderNumber: order.orderId,
+          invoiceNumber: generateInvoiceNumber(),
+          customerName: shippingName,
+          customerEmail: shippingEmail,
+          customerPhone: shippingPhone ?? null,
+          billingAddress: `${shippingAddress}, ${shippingCity}, ${shippingState}, ${shippingPostalCode}, ${shippingCountry}`,
+          items: orderItems.map((oi) => ({
+            title: oi.title,
+            quantity: oi.quantity,
+            price: oi.price,
+            originalPrice: oi.originalPrice,
+            productDiscount: oi.productDiscount,
+            selectedSize: oi.selectedSize,
+            total: oi.total,
+          })),
+          subtotal,
+          tax,
+          shipping: shippingRate,
+          discount,
+          total: grandTotal,
+          generatedAt: new Date(),
+        },
+        { transaction: t }
+      );
 
       await Cart.destroy({ where: { customerId: userId }, transaction: t });
 
       await t.commit();
 
-      // ✅ Fetch invoice + items for email
-const invoice = await Invoice.findOne({ where: { orderId: order.id } });
-const orderItems = await OrderItem.findAll({ where: { orderId: order.id } });
+      const pdfPath = await generateInvoicePDF({
+        orderNumber: order.orderId,
+        invoiceNumber: invoice.invoiceNumber,
+        customerName: shippingName,
+        customerEmail: shippingEmail,
+        generatedAt: invoice.generatedAt,
+        items: invoice.items,
+        subtotal,
+        tax,
+        shipping: shippingRate,
+        discount,
+        total: grandTotal,
+      });
 
-const invoiceData = {
-  orderNumber: order.orderId,
-  invoiceNumber: invoice.invoiceNumber,
-  customerName: shippingName,
-  customerEmail: shippingEmail,
-  generatedAt: invoice.generatedAt,
-  items: orderItems.map(i => ({
-    title: i.title,
-    quantity: i.quantity,
-    price: i.price,
-    total: i.price * i.quantity
-  })),
-  subtotal,
-  tax,
-  shipping: shippingRate,
-  discount,
-  total: grandTotal
-};
-
-const pdfPath = await generateInvoicePDF(invoiceData);
-await sendInvoiceEmail(shippingEmail, pdfPath, invoice.invoiceNumber);
-
+      await sendInvoiceEmail(shippingEmail, pdfPath, invoice.invoiceNumber);
+      await sendGeneralOrderEmail(shippingEmail, shippingName, order.orderId);
 
       return res.status(201).json({
         success: true,
         msg: 'COD order created successfully',
         order,
-        paymentRequired: false
+        paymentRequired: false,
       });
     }
 
-    // --- CCAvenue flow: create only a Transaction now; order later on callback ---
+    // ============ CCAVENUE FLOW ============
     if (paymentMethod === 'ccavenue') {
       const orderId = generateOrderId();
 
-      const transactionRecord = await Transaction.create({
-        transactionId: 'TXN' + Math.floor(100000 + Math.random() * 900000),
-        orderId,                     // provisional id to sync with gateway
-        customerId: userId,
-        customerName: shippingName,
-        paymentMethod: 'CCAVENUE',
-        gateway: 'CCAVENUE',
-        amount: grandTotal,
-        status: 'initiated',
-        meta: JSON.stringify({
+      // Save Order as Pending
+      const order = await Order.create(
+        {
+          orderId,
           customerId: userId,
-          products,
-          shipping: {
-            shippingName,
-            shippingEmail,
-            shippingAddress,
-            shippingCity,
-            shippingState,
-            shippingPostalCode,
-            shippingCountry,
-            shippingPhone,
-          },
-          totals: { subtotal, tax, shippingRate, discount, grandTotal }
-        })
-      }, { transaction: t });
+          paymentMethod: 'CCAVENUE',
+          amount: grandTotal,
+          paymentStatus: 'Pending',
+          orderStatus: 'Pending',
+          subtotal,
+          tax,
+          shippingRate,
+          discount,
+          grandTotal,
+          shippingName,
+          shippingEmail,
+          shippingAddress,
+          shippingCity,
+          shippingState,
+          shippingPostalCode,
+          shippingCountry,
+          shippingPhone,
+          orderDate: new Date(),
+        },
+        { transaction: t }
+      );
 
-      // Build merchant data as x-www-form-urlencoded (what CCAvenue expects before encryption)
+      // Transaction record
+      const transactionRecord = await Transaction.create(
+        {
+          transactionId: 'TXN' + Math.floor(100000 + Math.random() * 900000),
+          orderId: order.orderId,
+          customerId: userId,
+          customerName: shippingName,
+          paymentMethod: 'CCAVENUE',
+          gateway: 'CCAVENUE',
+          amount: grandTotal,
+          status: 'initiated',
+          meta: JSON.stringify({
+            customerId: userId,
+            products,
+            shipping: {
+              shippingName,
+              shippingEmail,
+              shippingAddress,
+              shippingCity,
+              shippingState,
+              shippingPostalCode,
+              shippingCountry,
+              shippingPhone,
+            },
+            totals: { subtotal, tax, shippingRate, discount, grandTotal },
+          }),
+        },
+        { transaction: t }
+      );
+
       const merchantData = {
         merchant_id: ccAvenue.merchantId,
         order_id: orderId,
@@ -847,19 +933,17 @@ await sendInvoiceEmail(shippingEmail, pdfPath, invoice.invoiceNumber);
         redirect_url: process.env.CALLBACK_URL,
         cancel_url: process.env.CALLBACK_URL,
         language: 'EN',
-
         billing_name: shippingName,
         billing_email: shippingEmail,
         billing_tel: shippingPhone,
-
-        // pass our transaction id for lookup on callback
         merchant_param1: transactionRecord.transactionId,
       };
 
       const encRequest = ccAvenue.encrypt(qs.stringify(merchantData));
       await t.commit();
 
-      // Return POST payload parts (not a GET link!)
+      await sendGeneralOrderEmail(shippingEmail, shippingName, orderId);
+
       return res.status(200).json({
         success: true,
         paymentRequired: true,
@@ -875,7 +959,6 @@ await sendInvoiceEmail(shippingEmail, pdfPath, invoice.invoiceNumber);
 
     await t.rollback();
     return res.status(400).json({ success: false, msg: 'Invalid payment method' });
-
   } catch (err) {
     await t.rollback();
     console.error('Order creation error:', err);
@@ -884,34 +967,31 @@ await sendInvoiceEmail(shippingEmail, pdfPath, invoice.invoiceNumber);
 };
 
 
+
+
+
+
+
 exports.handleCCAvenueCallback = async (req, res) => {
   const t = await sequelize.transaction();
   try {
     const encryptedResponse = req.body.encResp;
     if (!encryptedResponse) {
       await t.rollback();
-      return res.status(400).json({ 
-        success: false,
-        msg: 'No payment response received' 
-      });
+      return res.status(400).json({ success: false, msg: "No payment response received" });
     }
 
-    // Decrypt the response
+    // Decrypt and parse (CCAvenue sends key=value&key2=value2)
     const decryptedResponse = ccAvenue.decrypt(encryptedResponse);
-    const response = JSON.parse(decryptedResponse);
-    
-    console.log('CC Avenue Response:', response); // For debugging
+    const response = qs.parse(decryptedResponse);
 
-    // Validate required fields
+    console.log("CC Avenue Response:", response);
+
     if (!response.order_id || !response.order_status) {
       await t.rollback();
-      return res.status(400).json({ 
-        success: false,
-        msg: 'Invalid payment response format' 
-      });
+      return res.status(400).json({ success: false, msg: "Invalid payment response format" });
     }
 
-    // Find the transaction record
     const transactionRecord = await Transaction.findOne({
       where: { transactionId: response.merchant_param1 },
       transaction: t
@@ -919,13 +999,9 @@ exports.handleCCAvenueCallback = async (req, res) => {
 
     if (!transactionRecord) {
       await t.rollback();
-      return res.status(404).json({ 
-        success: false,
-        msg: 'Transaction not found' 
-      });
+      return res.status(404).json({ success: false, msg: "Transaction not found" });
     }
 
-    // Find the order
     const order = await Order.findOne({
       where: { orderId: response.order_id },
       transaction: t
@@ -933,111 +1009,106 @@ exports.handleCCAvenueCallback = async (req, res) => {
 
     if (!order) {
       await t.rollback();
-      return res.status(404).json({ 
-        success: false,
-        msg: 'Order not found' 
-      });
+      return res.status(404).json({ success: false, msg: "Order not found" });
     }
 
-    // Update transaction status
-    transactionRecord.status = response.order_status === 'Success' ? 'success' : 'failed';
+    // Update transaction
+    transactionRecord.status = response.order_status === "Success" ? "success" : "failed";
     transactionRecord.paymentId = response.bank_ref_no || null;
     transactionRecord.responseData = response;
     await transactionRecord.save({ transaction: t });
 
-    // Handle successful payment
-    if (response.order_status === 'Success') {
-      // Verify amount matches
+    if (response.order_status === "Success") {
       if (parseFloat(response.amount) !== parseFloat(order.grandTotal)) {
         await t.rollback();
-        return res.status(400).json({ 
-          success: false,
-          msg: 'Payment amount mismatch' 
-        });
+        return res.status(400).json({ success: false, msg: "Payment amount mismatch" });
       }
 
-      // Update order status
-      await order.update({
-        paymentStatus: 'Paid',
-        orderStatus: 'Processing'
-      }, { transaction: t });
+      // Update order
+      await order.update(
+        { paymentStatus: "Paid", orderStatus: "Processing" },
+        { transaction: t }
+      );
 
       // Create invoice if not exists
-      const existingInvoice = await Invoice.findOne({
+      let invoice = await Invoice.findOne({
         where: { orderId: order.id },
         transaction: t
       });
 
-      if (!existingInvoice) {
-        await Invoice.create({
-          invoiceNumber: generateInvoiceNumber(),
-          orderId: order.id,
-          customerId: order.customerId,
-          issueDate: new Date(),
-          dueDate: new Date(new Date().setDate(new Date().getDate() + 7)),
-          status: 'paid',
-          amount: order.grandTotal,
-          tax: order.tax,
-          discount: order.discount,
-          shipping: order.shippingRate,
-          total: order.grandTotal,
-        }, { transaction: t });
+      if (!invoice) {
+        invoice = await Invoice.create(
+          {
+            invoiceNumber: generateInvoiceNumber(),
+            orderId: order.id,
+            customerId: order.customerId,
+            issueDate: new Date(),
+            dueDate: new Date(new Date().setDate(new Date().getDate() + 7)),
+            status: "paid",
+            amount: order.grandTotal,
+            tax: order.tax,
+            discount: order.discount,
+            shipping: order.shippingRate,
+            total: order.grandTotal
+          },
+          { transaction: t }
+        );
       }
 
       // Clear cart
-      await Cart.destroy({
-        where: { customerId: order.customerId },
-        transaction: t
-      });
+      await Cart.destroy({ where: { customerId: order.customerId }, transaction: t });
 
       await t.commit();
 
-      // ✅ Fetch invoice + items for email
-const invoice = await Invoice.findOne({ where: { orderId: order.id } });
-const orderItems = await OrderItem.findAll({ where: { orderId: order.id } });
+      // After commit → send mail/PDF
+      try {
+        const orderItems = await OrderItem.findAll({ where: { orderId: order.id } });
 
-const invoiceData = {
-  orderNumber: order.orderId,
-  invoiceNumber: invoice.invoiceNumber,
-  customerName: order.shippingName,
-  customerEmail: order.shippingEmail,
-  generatedAt: invoice.generatedAt,
-  items: orderItems.map(i => ({
-    title: i.title,
-    quantity: i.quantity,
-    price: i.price,
-    total: i.price * i.quantity
-  })),
-  subtotal: order.subtotal,
-  tax: order.tax,
-  shipping: order.shippingRate,
-  discount: order.discount,
-  total: order.grandTotal
-};
+        const invoiceData = {
+          orderNumber: order.orderId,
+          invoiceNumber: invoice.invoiceNumber,
+          customerName: order.shippingName,
+          customerEmail: order.shippingEmail,
+          generatedAt: invoice.createdAt,
+          items: orderItems.map(i => ({
+            title: i.title,
+            quantity: i.quantity,
+            price: i.price,
+            total: i.price * i.quantity
+          })),
+          subtotal: order.subtotal,
+          tax: order.tax,
+          shipping: order.shippingRate,
+          discount: order.discount,
+          total: order.grandTotal
+        };
 
-const pdfPath = await generateInvoicePDF(invoiceData);
-await sendInvoiceEmail(order.shippingEmail, pdfPath, invoice.invoiceNumber);
+        const pdfPath = await generateInvoicePDF(invoiceData);
+        await sendInvoiceEmail(order.shippingEmail, pdfPath, invoice.invoiceNumber);
+        await sendGeneralOrderEmail(order.shippingEmail, order.shippingName, order.orderId);
+      } catch (mailErr) {
+        console.error("Post-commit email error:", mailErr);
+      }
 
-      // Redirect to frontend success page
-      return res.redirect(`${process.env.FRONTEND_URL}/thankyou?order_id=${order.orderId}&status=success`);
+      return res.redirect(`${process.env.FRONTEND_URL}/thankyou/${order.orderId}?status=success`);
     }
 
-    // Handle failed payment
-    await order.update({
-      paymentStatus: 'Failed',
-      orderStatus: 'Failed',
-      paymentNote: response.failure_message || 'Payment failed'
-    }, { transaction: t });
+    // Failed case
+    await order.update(
+      { paymentStatus: "Failed", orderStatus: "Failed", paymentNote: response.failure_message || "Payment failed" },
+      { transaction: t }
+    );
 
     await t.commit();
-    return res.redirect(`${process.env.FRONTEND_URL}/thankyou?order_id=${order.orderId}&status=failed`);
+    return res.redirect(`${process.env.FRONTEND_URL}/thankyou/${order.orderId}?status=failed`);
 
   } catch (err) {
     await t.rollback();
-    console.error('CC Avenue callback error:', err);
+    console.error("CC Avenue callback error:", err);
     return res.redirect(`${process.env.FRONTEND_URL}/payment-error`);
   }
 };
+
 
 exports.handlePaymentSuccess = async (req, res) => {
   try {
@@ -1217,6 +1288,9 @@ exports.generateInvoiceOnOrderComplete = async (orderId) => {
       title: item.product?.title || 'Unnamed Product',
       quantity: item.quantity,
       price: item.price,
+      originalPrice: item.originalPrice,
+      productDiscount: item.productDiscount,
+      selectedSize: item.selectedSize,
       total: item.price * item.quantity
     }));
 
@@ -1301,16 +1375,50 @@ exports.generateInvoiceOnOrderComplete = async (orderId) => {
 exports.getAllOrders = async (req, res) => {
   try {
     const { status } = req.query;
+
     const where = {};
+    if (status) {
+      where.orderStatus = status;
+    }
 
-    if (status) where.orderStatus = status;
+    const orders = await Order.findAll({
+      where,
+      include: [
+        {
+          model: Customer,
+          as: "Customer", // 👈 FIXED
+          attributes: ['id', 'name', 'email', 'mobile'],
+        },
+        {
+          model: OrderItem,
+          as: 'orderItems',
+          attributes: ['id', 'title', 'quantity', 'price'],
+        },
+        {
+          model: Shipment,
+          as: 'shipments',
+          attributes: ['id', 'waybill', 'status'],
+        },
+      ],
+      order: [['orderDate', 'DESC']],
+    });
 
-    const orders = await Order.findAll({ where, order: [['orderDate', 'DESC']] });
-    res.status(200).json({ success: true, data: orders });
+    res.status(200).json({
+      success: true,
+      count: orders.length,
+      data: orders,
+    });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Server error', error: err.message });
+    console.error('getAllOrders error:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch orders',
+      error: err.message,
+    });
   }
 };
+
+
 
 exports.getOrderById = async (req, res) => {
   try {
@@ -1334,6 +1442,80 @@ exports.getOrderById = async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 };
+
+
+exports.getMyOrders = async (req, res) => {
+  console.log('User ID:', req.userId);
+  try {
+    const orders = await Order.findAll({
+      where: { customerId: req.userId },
+      include: [
+        { model: OrderItem, as: 'orderItems', attributes: ['id', 'title', 'quantity', 'price'] },
+        { model: Shipment, as: 'shipments', attributes: ['id', 'waybill', 'status'] },
+      ],
+      order: [['createdAt', 'DESC']],
+    });
+
+    res.status(200).json({
+      success: true,
+      count: orders.length,
+      data: orders,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: 'Failed to fetch your orders', error: err.message });
+  }
+};
+// controllers/orderController.js
+
+// controllers/orderController.js
+exports.getMyOrderById = async (req, res) => {
+  try {
+    console.log("🔍 Fetching order for:", req.params.id, "user:", req.userId);
+
+    const order = await Order.findOne({
+  where: { 
+    orderId: req.params.id,
+    customerId: req.userId 
+  },
+  include: [
+    {
+      model: OrderItem,
+      as: 'orderItems',
+      include: [{ model: Product, as: 'product' ,  attributes: ['id','title','priceVariants'] ,  include: [
+            { model: ImageVariant, as: 'imageVariants' } // ✅ Include this
+          ] }]
+    },
+    {
+      model: Shipment,
+      as: 'shipments',
+      attributes: ['id','waybill','status','courier','createdAt']
+    },
+    {
+      model: Invoice,
+      as: 'invoice',
+      attributes: ['invoiceNumber', 'generatedAt', 'template']
+    }
+  ]
+});
+
+if (!order) {
+  return res.status(404).json({ message: 'Order not found' });
+}
+
+res.status(200).json({
+  success: true,
+  data: order
+});
+
+  } catch (err) {
+    console.error("❌ getMyOrderById error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+
+
 
 exports.cancelOrder = async (req, res) => {
   try {
@@ -1455,5 +1637,27 @@ exports.updateOrderStatus = async (req, res) => {
     res.json({ message: 'Order updated', order });
   } catch (error) {
     res.status(500).json({ message: 'Error updating order', error: error.message });
+  }
+};
+
+
+exports.getOrderWithShipments = async (req, res) => {
+  try {
+    const order = await Order.findByPk(req.params.id, {
+      include: [
+        { model: Shipment, as: "shipments" },
+        { model: OrderItem, as: "orderItems" },
+        { model: Customer, as: "customer" },
+      ],
+    });
+
+    if (!order) {
+      return res.status(404).json({ success: false, msg: "Order not found" });
+    }
+
+    res.json({ success: true, order });
+  } catch (err) {
+    console.error("getOrderWithShipments error:", err);
+    res.status(500).json({ success: false, msg: "Failed to fetch order", error: err.message });
   }
 };

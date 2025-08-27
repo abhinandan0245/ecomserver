@@ -8,7 +8,20 @@ class Order extends Model {
       as: 'orderItems',
       onDelete: 'CASCADE',
     });
-      Order.belongsTo(models.Customer, { foreignKey: 'customerId' });
+      Order.belongsTo(models.Customer, { foreignKey: 'customerId', as: "Customer", });
+
+        //  Add this:
+    Order.hasMany(models.Shipment, {
+      foreignKey: 'orderId',
+      as: 'shipments',
+      onDelete: 'CASCADE',
+    });
+    
+    Order.hasOne(models.Invoice, {
+  foreignKey: "orderId",
+  as: "invoice",
+  onDelete: "CASCADE",
+});
   }
 }
 
@@ -49,7 +62,7 @@ Order.init({
 orderStatus: {
   type: DataTypes.STRING,
   allowNull: false,
-  defaultValue: 'Pending',
+  defaultValue: 'Processing',
 },
   orderDate: {
     type: DataTypes.DATE,

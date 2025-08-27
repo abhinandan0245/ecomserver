@@ -4,7 +4,8 @@ const sequelize = require('../config/db');
 
 class Invoice extends Model {
   static associate(models) {
-    Invoice.belongsTo(models.Order, { foreignKey: 'orderId', as: 'order' });
+Invoice.belongsTo(models.Order, { foreignKey: 'orderId', as: 'invoice' });
+
   }
 }
 

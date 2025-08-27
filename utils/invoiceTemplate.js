@@ -293,6 +293,8 @@ module.exports = function generateInvoiceHTML(invoiceData) {
               <td>${item.title}</td>
               <td>${item.quantity}</td>
               <td>₹${item.price.toFixed(2)}</td>
+              <td>₹${item.originalPrice.toFixed(2)}</td>
+              <td>₹${item.selectedSize}</td>
               <td>₹${item.total.toFixed(2)}</td>
             </tr>
           `).join('')}
